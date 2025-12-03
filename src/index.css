@@ -1,0 +1,113 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+/* Definition of the design system. All colors, gradients, fonts, etc should be defined here. 
+All colors MUST be HSL.
+*/
+
+@layer base {
+  :root {
+    --background: 210 40% 98%;
+    --foreground: 215 25% 15%;
+
+    --card: 0 0% 100%;
+    --card-foreground: 215 25% 15%;
+
+    --popover: 0 0% 100%;
+    --popover-foreground: 215 25% 15%;
+
+    --primary: 187 85% 43%;
+    --primary-foreground: 0 0% 100%;
+
+    --secondary: 210 20% 94%;
+    --secondary-foreground: 215 25% 15%;
+
+    --muted: 210 20% 94%;
+    --muted-foreground: 215 15% 50%;
+
+    --accent: 187 85% 43%;
+    --accent-foreground: 0 0% 100%;
+
+    --destructive: 0 70% 55%;
+    --destructive-foreground: 0 0% 100%;
+
+    --border: 214 25% 88%;
+    --input: 214 25% 88%;
+    --ring: 187 85% 43%;
+
+    --radius: 0.75rem;
+
+    --message-sent: 187 85% 43%;
+    --message-sent-foreground: 0 0% 100%;
+    --message-received: 0 0% 100%;
+    --message-received-foreground: 215 25% 15%;
+    --message-expired: 0 0% 70%;
+
+    --sidebar-background: 0 0% 100%;
+    --sidebar-foreground: 215 25% 15%;
+    --sidebar-primary: 187 85% 43%;
+    --sidebar-primary-foreground: 0 0% 100%;
+    --sidebar-accent: 210 20% 96%;
+    --sidebar-accent-foreground: 215 25% 15%;
+    --sidebar-border: 214 25% 88%;
+    --sidebar-ring: 187 85% 43%;
+
+    --transition-smooth: all 0.2s cubic-bezier(0.4, 0, 0.2, 1);
+  }
+
+  .dark {
+    --background: 222 30% 11%;
+    --foreground: 210 40% 98%;
+
+    --card: 222 30% 14%;
+    --card-foreground: 210 40% 98%;
+
+    --popover: 222 30% 14%;
+    --popover-foreground: 210 40% 98%;
+
+    --primary: 187 85% 50%;
+    --primary-foreground: 0 0% 100%;
+
+    --secondary: 222 25% 18%;
+    --secondary-foreground: 210 40% 98%;
+
+    --muted: 222 25% 18%;
+    --muted-foreground: 215 15% 65%;
+
+    --accent: 187 85% 50%;
+    --accent-foreground: 0 0% 100%;
+
+    --destructive: 0 70% 55%;
+    --destructive-foreground: 0 0% 100%;
+
+    --border: 222 25% 22%;
+    --input: 222 25% 22%;
+    --ring: 187 85% 50%;
+
+    --message-sent: 187 85% 50%;
+    --message-sent-foreground: 0 0% 100%;
+    --message-received: 222 30% 18%;
+    --message-received-foreground: 210 40% 98%;
+    --message-expired: 0 0% 40%;
+
+    --sidebar-background: 222 30% 14%;
+    --sidebar-foreground: 210 40% 98%;
+    --sidebar-primary: 187 85% 50%;
+    --sidebar-primary-foreground: 0 0% 100%;
+    --sidebar-accent: 222 25% 20%;
+    --sidebar-accent-foreground: 210 40% 98%;
+    --sidebar-border: 222 25% 22%;
+    --sidebar-ring: 187 85% 50%;
+  }
+}
+
+@layer base {
+  * {
+    @apply border-border;
+  }
+
+  body {
+    @apply bg-background text-foreground;
+  }
+}
