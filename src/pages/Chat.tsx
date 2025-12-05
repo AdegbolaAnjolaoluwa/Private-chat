@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useState } from "react";
 import { useParams } from "react-router-dom";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { ChatLayout } from "@/components/chat/ChatLayout";
 import { Friend, Message } from "@/types/chat";
 import { getFriends, getMessages, reactToMessage, sendMessage } from "@/lib/api";
@@ -9,7 +10,8 @@ import { initSocket, joinChat, socket } from "@/lib/socket";
 export default function Chat() {
   const { friendId = "" } = useParams();
   const [friend, setFriend] = useState<Friend | null>(null);
-  const [messages, setMessages] = useState<Message[]>([]);
+  const queryClient = useQueryClient();
+  const { data: messages = [] } = useQuery<Message[]>({ queryKey: ["messages", friendId], queryFn: () => getMessages(friendId), enabled: !!friendId });
   const [typingUser, setTypingUser] = useState<string | undefined>(undefined);
 
   const authUser = JSON.parse(localStorage.getItem("authUser") || "{}");
@@ -28,7 +30,9 @@ export default function Chat() {
       if (chatId === friendId) setTypingUser(undefined);
     });
     socket.on("message:new", ({ chatId, message }) => {
-      if (chatId === friendId) setMessages((prev) => [...prev, message]);
+      if (chatId === friendId) {
+        queryClient.setQueryData<Message[]>(["messages", friendId], (prev = []) => [...prev, message]);
+      }
     });
     return () => {
       socket.off("typing:start");
@@ -39,7 +43,6 @@ export default function Chat() {
 
   useEffect(() => {
     getFriends().then((fs) => setFriend(fs.find((f: Friend) => f.id === friendId) || null));
-    getMessages(friendId).then(setMessages);
   }, [friendId]);
 
   const onSendMessage = async (text: string) => {
@@ -53,14 +56,16 @@ export default function Chat() {
       reactions: [],
       readBy: [],
     };
-    setMessages((prev) => [...prev, optimistic]);
+    queryClient.setQueryData<Message[]>(["messages", friendId], (prev = []) => [...prev, optimistic]);
     try {
       await sendMessage(friendId, text, currentUserId);
-    } catch {}
+    } finally {
+      queryClient.invalidateQueries({ queryKey: ["messages", friendId] });
+    }
   };
 
   const onReact = async (messageId: string, emoji: string) => {
-    setMessages((prev) =>
+    queryClient.setQueryData<Message[]>(["messages", friendId], (prev = []) =>
       prev.map((m) =>
         m.id === messageId
           ? {
@@ -75,7 +80,9 @@ export default function Chat() {
     );
     try {
       await reactToMessage(messageId, emoji, currentUserId);
-    } catch {}
+    } finally {
+      queryClient.invalidateQueries({ queryKey: ["messages", friendId] });
+    }
   };
 
   const onTyping = () => {

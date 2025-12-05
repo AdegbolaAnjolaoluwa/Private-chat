@@ -16,9 +16,10 @@ interface AppSidebarProps {
   activeView: string;
   onViewChange: (view: string) => void;
   pendingRequestCount?: number;
+  onLogout?: () => void;
 }
 
-export function AppSidebar({ activeView, onViewChange, pendingRequestCount = 0 }: AppSidebarProps) {
+export function AppSidebar({ activeView, onViewChange, pendingRequestCount = 0, onLogout }: AppSidebarProps) {
   const menuItems = [
     { id: "friends", title: "Friends", icon: Users },
     { id: "requests", title: "Friend Requests", icon: Clock, badge: pendingRequestCount },
@@ -57,6 +58,18 @@ export function AppSidebar({ activeView, onViewChange, pendingRequestCount = 0 }
                   </SidebarMenuButton>
                 </SidebarMenuItem>
               ))}
+            </SidebarMenu>
+          </SidebarGroupContent>
+        </SidebarGroup>
+        <SidebarGroup>
+          <SidebarGroupLabel>Account</SidebarGroupLabel>
+          <SidebarGroupContent>
+            <SidebarMenu>
+              <SidebarMenuItem>
+                <SidebarMenuButton onClick={onLogout} className="w-full">
+                  Logout
+                </SidebarMenuButton>
+              </SidebarMenuItem>
             </SidebarMenu>
           </SidebarGroupContent>
         </SidebarGroup>
