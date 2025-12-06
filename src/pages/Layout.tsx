@@ -13,6 +13,7 @@ export default function Layout() {
   const [pendingCount, setPendingCount] = useState(0);
   const [showPrivacyAlert, setShowPrivacyAlert] = useState(true);
 
+
   const activeView = useMemo(() => {
     if (location.pathname.startsWith("/app/requests")) return "requests";
     if (location.pathname.startsWith("/app/add-friend")) return "add-friend";
@@ -20,7 +21,8 @@ export default function Layout() {
   }, [location.pathname]);
 
   useEffect(() => {
-    getFriendRequests("incoming").then((reqs) => setPendingCount(reqs.length));
+    getFriendRequests("incoming").then((reqs) => setPendingCount(reqs.length)).catch(() => setPendingCount(0));
+
   }, [location.pathname]);
 
   const onViewChange = (view: string) => {
@@ -48,13 +50,19 @@ export default function Layout() {
             <Button variant="outline" size="sm" onClick={onLogout}>Logout</Button>
           </div>
           {showPrivacyAlert && (
-            <Alert className="m-4 border-destructive/20 bg-destructive/10">
+            <Alert role="alert" className="m-4 border-destructive/20 bg-destructive/10">
               <div className="flex items-center gap-2">
                 <AlertTriangle className="w-4 h-4 text-destructive" />
                 <AlertDescription className="text-sm">
                   <strong>Auto-delete enabled:</strong> All messages automatically delete after 2 hours for privacy.
                 </AlertDescription>
-                <Button variant="ghost" size="icon" onClick={() => setShowPrivacyAlert(false)} className="ml-auto">
+                <Button
+                  variant="ghost"
+                  size="icon"
+                  aria-label="Dismiss auto-delete notice"
+                  onClick={() => setShowPrivacyAlert(false)}
+                  className="ml-auto"
+                >
                   <X className="w-4 h-4" />
                 </Button>
               </div>
