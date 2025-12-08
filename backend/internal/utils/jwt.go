@@ -3,6 +3,7 @@ package utils
 import (
 	"crypto/rand"
 	"encoding/base64"
+	"errors"
 	"os"
 	"time"
 
@@ -50,7 +51,7 @@ func ParseToken(tokenStr string) (string, error) {
 		return "", err
 	}
 	if !t.Valid {
-		return "", jwt.ErrTokenInvalid
+		return "", errors.New("invalid token")
 	}
 	claims := t.Claims.(jwt.MapClaims)
 	sub, _ := claims["sub"].(string)

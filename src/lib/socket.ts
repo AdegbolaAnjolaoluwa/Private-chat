@@ -1,18 +1,22 @@
-import { io, Socket } from "socket.io-client";
-
-let _socket: Socket | null = null;
+let _ws: WebSocket | null = null;
 
 export const socket = {
-  on: (...args: Parameters<Socket["on"]>) => _socket?.on(...args),
-  off: (...args: Parameters<Socket["off"]>) => _socket?.off(...args),
-  emit: (...args: Parameters<Socket["emit"]>) => _socket?.emit(...args),
+  on: (cb: (evt: MessageEvent) => void) => _ws && (_ws.onmessage = cb),
+  off: () => { if (_ws) _ws.onmessage = null; },
+  send: (data: any) => { if (_ws && _ws.readyState === WebSocket.OPEN) _ws.send(JSON.stringify(data)); },
 };
 
-export function initSocket(userId: string) {
-  if (_socket) return;
-  _socket = io("http://localhost:4000", { transports: ["websocket"], query: { userId } });
+export function initSocket() {
+  if (_ws) return;
+  const auth = JSON.parse(localStorage.getItem("authUser") || "null");
+  const token = auth?.token || auth?.accessToken || null;
+  const base = import.meta.env.VITE_API_URL?.replace(/^http/, 'ws') || "ws://localhost:4000";
+  const url = token ? `${base}/ws?token=${encodeURIComponent(token)}` : `${base}/ws`;
+  _ws = new WebSocket(url);
+  _ws.onopen = () => console.log("WebSocket connected");
+  _ws.onclose = () => { console.log("WebSocket closed"); _ws = null; };
 }
 
 export function joinChat(userId: string, friendId: string) {
-  _socket?.emit("join", { userId, friendId });
+  socket.send({ type: "join", userId, friendId });
 }

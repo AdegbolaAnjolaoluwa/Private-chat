@@ -13,8 +13,8 @@ import (
 	"github.com/asura409/private-chat-backend/internal/handlers"
 	"github.com/asura409/private-chat-backend/internal/models"
 	"github.com/asura409/private-chat-backend/internal/store"
-	hubpkg "github.com/asura409/private-chat-backend/internal/ws"
 	"github.com/asura409/private-chat-backend/internal/utils"
+	hubpkg "github.com/asura409/private-chat-backend/internal/ws"
 )
 
 func main() {
@@ -42,10 +42,16 @@ func main() {
 	log.Println("Database connected and migrated successfully")
 
 	app := fiber.New()
+	// Allow frontend origin (set FRONTEND_ORIGIN in .env), default to Vite dev origin
+	frontendOrigin := os.Getenv("FRONTEND_ORIGIN")
+	if frontendOrigin == "" {
+		frontendOrigin = "http://localhost:5173"
+	}
 	app.Use(cors.New(cors.Config{
-		AllowOrigins: "*",
-		AllowMethods: "GET,POST,PUT,DELETE,OPTIONS",
-		AllowHeaders: "Content-Type,Authorization",
+		AllowOrigins:     frontendOrigin,
+		AllowMethods:     "GET,POST,PUT,DELETE,OPTIONS",
+		AllowHeaders:     "Content-Type,Authorization",
+		AllowCredentials: true,
 	}))
 
 	// Initialize repository and services
