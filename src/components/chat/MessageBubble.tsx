@@ -4,7 +4,7 @@ import { formatTimestamp, getRemainingTime } from "@/utils/time";
 import { cn } from "@/lib/utils";
 import { ReactionPicker } from "./ReactionPicker";
 import { ReactionDisplay } from "./ReactionDisplay";
-import { Check, CheckCheck } from "lucide-react";
+import { Check, CheckCheck, Clock } from "lucide-react";
 
 interface MessageBubbleProps {
   message: Message;
@@ -34,7 +34,9 @@ export function MessageBubble({ message, isSent, currentUserId, onReact }: Messa
               <span className="text-xs opacity-70">{formatTimestamp(message.createdAt)}</span>
               {isSent && (
                 <div className="text-xs opacity-70">
-                  {message.readBy && message.readBy.length > 0 ? (
+                  {message.pending ? (
+                    <Clock className="w-3.5 h-3.5" />
+                  ) : message.readBy && message.readBy.length > 0 ? (
                     <CheckCheck className="w-3.5 h-3.5 text-primary" />
                   ) : (
                     <Check className="w-3.5 h-3.5" />

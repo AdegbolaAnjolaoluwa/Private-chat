@@ -12,6 +12,7 @@ export default function Layout() {
   const navigate = useNavigate();
   const [pendingCount, setPendingCount] = useState(0);
   const [showPrivacyAlert, setShowPrivacyAlert] = useState(true);
+  const authUser = JSON.parse(localStorage.getItem("authUser") || "{}");
 
 
   const activeView = useMemo(() => {
@@ -45,7 +46,12 @@ export default function Layout() {
           <div className="md:hidden flex items-center justify-between p-2 border-b border-border bg-card">
             <div className="flex items-center gap-2">
               <SidebarTrigger />
-              <div className="font-semibold">PrivateChat</div>
+              <div className="font-semibold flex items-center gap-2">
+                <span>PrivateChat</span>
+                {authUser?.username && (
+                  <span className="text-xs text-muted-foreground">({authUser.username})</span>
+                )}
+              </div>
             </div>
             <Button variant="outline" size="sm" onClick={onLogout}>Logout</Button>
           </div>

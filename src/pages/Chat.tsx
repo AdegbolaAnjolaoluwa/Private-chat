@@ -3,7 +3,7 @@ import { useParams } from "react-router-dom";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { ChatLayout } from "@/components/chat/ChatLayout";
 import { Friend, Message } from "@/types/chat";
-import { getFriends, getMessages, reactToMessage, sendMessage } from "@/lib/api";
+import { getFriends, getMessages, reactToMessage, sendMessage, markMessageRead } from "@/lib/api";
 import { getExpiryTime } from "@/utils/time";
 import { initSocket, joinChat, socket } from "@/lib/socket";
 
@@ -34,10 +34,16 @@ export default function Chat() {
         queryClient.setQueryData<Message[]>(["messages", friendId], (prev = []) => [...prev, message]);
       }
     });
+    socket.on("message:read", ({ messageId, userId }) => {
+      queryClient.setQueryData<Message[]>(["messages", friendId], (prev = []) =>
+        prev.map((m) => (m.id === messageId ? { ...m, readBy: Array.from(new Set([...(m.readBy || []), userId])) } : m)),
+      );
+    });
     return () => {
       socket.off("typing:start");
       socket.off("typing:stop");
       socket.off("message:new");
+      socket.off("message:read");
     };
   }, [friendId]);
 
@@ -55,6 +61,7 @@ export default function Chat() {
       expiresAt: getExpiryTime(now),
       reactions: [],
       readBy: [],
+      pending: true,
     };
     queryClient.setQueryData<Message[]>(["messages", friendId], (prev = []) => [...prev, optimistic]);
     try {
@@ -93,6 +100,23 @@ export default function Chat() {
   };
 
   const typingDisplay = useMemo(() => (typingUser !== currentUserId ? typingUser : undefined), [typingUser, currentUserId]);
+
+  useEffect(() => {
+    const msgs = queryClient.getQueryData<Message[]>(["messages", friendId]) || [];
+    msgs
+      .filter((m) => m.sender !== currentUserId && !(m.readBy || []).includes(currentUserId))
+      .forEach(async (m) => {
+        try {
+          await markMessageRead(m.id, currentUserId);
+          queryClient.setQueryData<Message[]>(["messages", friendId], (prev = []) =>
+            prev.map((x) => (x.id === m.id ? { ...x, readBy: [...(x.readBy || []), currentUserId] } : x)),
+          );
+        } catch {}
+      });
+    const counts = JSON.parse(localStorage.getItem("unreadCounts") || "{}");
+    counts[friendId] = 0;
+    localStorage.setItem("unreadCounts", JSON.stringify(counts));
+  }, [friendId, queryClient, currentUserId]);
 
   if (!friend) return null;
 

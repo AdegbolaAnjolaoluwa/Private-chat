@@ -26,12 +26,17 @@ export function AppSidebar({ activeView, onViewChange, pendingRequestCount = 0, 
     { id: "add-friend", title: "Add Friend", icon: UserPlus },
   ];
 
+  const authUser = JSON.parse(localStorage.getItem("authUser") || "{}");
+
   return (
     <Sidebar className="border-r border-sidebar-border">
       <SidebarHeader className="border-b border-sidebar-border p-4">
         <div className="flex items-center gap-2">
           <MessageCircle className="w-6 h-6 text-primary" />
-          <h1 className="font-bold text-lg">PrivateChat</h1>
+          <div>
+            <h1 className="font-bold text-lg">PrivateChat</h1>
+            <div className="text-xs text-muted-foreground">Signed in as {authUser?.username || "You"}</div>
+          </div>
         </div>
       </SidebarHeader>
       <SidebarContent>

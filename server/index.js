@@ -20,6 +20,10 @@ const friends = [
   { id: "2", username: "Bob", email: "bob@example.com", status: "offline", lastSeen: "2h ago" },
 ];
 
+const groups = [
+  { id: "general", name: "General", members: ["1", "2"] },
+];
+
 const roomKey = (a, b) => {
   const [x, y] = [String(a), String(b)].sort();
   return `chat:${x}:${y}`;
@@ -82,6 +86,12 @@ app.get("/friends", (req, res) => {
   res.json(list);
 });
 
+app.get("/groups", (req, res) => {
+  const userId = String(req.query.userId || "");
+  const list = groups.filter((g) => g.members.includes(userId)).map((g) => ({ id: g.id, name: g.name, members: g.members }));
+  res.json(list);
+});
+
 // Fetch messages for a pair (requires userId query param)
 app.get("/chats/:friendId/messages", (req, res) => {
   const { friendId } = req.params;
@@ -100,7 +110,28 @@ app.post("/chats/:friendId/messages", (req, res) => {
   const createdAt = new Date().toISOString();
   const expiresAt = new Date(new Date(createdAt).getTime() + 2 * 60 * 60 * 1000).toISOString();
   const message = { id: Date.now().toString(), sender, body, createdAt, expiresAt, reactions: [], readBy: [] };
-  messages[key] = [...(messages[key] || []), message];
+  messages[key] = [ ...(messages[key] || []), message ];
+  io.to(key).emit("message:new", { chatId: key, message });
+  res.status(201).json(message);
+});
+
+// Group messages
+app.get("/groups/:groupId/messages", (req, res) => {
+  const { groupId } = req.params;
+  const key = `group:${groupId}`;
+  const list = (messages[key] || []).filter((m) => new Date(m.expiresAt).getTime() > Date.now());
+  res.json(list);
+});
+
+app.post("/groups/:groupId/messages", (req, res) => {
+  const { groupId } = req.params;
+  const { body, sender } = req.body || {};
+  if (!sender || !body) return res.status(400).json({ error: "Missing sender or body" });
+  const createdAt = new Date().toISOString();
+  const expiresAt = new Date(new Date(createdAt).getTime() + 2 * 60 * 60 * 1000).toISOString();
+  const message = { id: Date.now().toString(), sender, body, createdAt, expiresAt, reactions: [], readBy: [] };
+  const key = `group:${groupId}`;
+  messages[key] = [ ...(messages[key] || []), message ];
   io.to(key).emit("message:new", { chatId: key, message });
   res.status(201).json(message);
 });
@@ -141,6 +172,9 @@ app.post("/messages/:id/read", (req, res) => {
 io.on("connection", (socket) => {
   socket.on("join", ({ userId, friendId }) => {
     socket.join(roomKey(userId, friendId));
+  });
+  socket.on("group:join", ({ groupId }) => {
+    socket.join(`group:${groupId}`);
   });
   socket.on("typing:start", ({ chatId, userName }) => {
     io.to(chatId).emit("typing:start", { chatId, userName });

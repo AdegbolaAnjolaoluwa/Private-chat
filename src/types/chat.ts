@@ -6,6 +6,7 @@ export interface Message {
   expiresAt: string;
   reactions?: Reaction[];
   readBy?: string[];
+  pending?: boolean;
 }
 
 export interface Reaction {

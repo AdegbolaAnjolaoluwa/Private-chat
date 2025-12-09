@@ -2,7 +2,34 @@ const BASE = "http://localhost:4000";
 
 export async function getFriends() {
   const authUser = JSON.parse(localStorage.getItem("authUser") || "{}");
-  const res = await fetch(`${BASE}/friends?userId=${encodeURIComponent(authUser.id || "")}`);
+  const controller = new AbortController();
+  const timeout = setTimeout(() => controller.abort(), 8000);
+  try {
+    const res = await fetch(`${BASE}/friends?userId=${encodeURIComponent(authUser.id || "")}`, { signal: controller.signal });
+    if (!res.ok) throw new Error(`Failed to load friends (${res.status})`);
+    return res.json();
+  } finally {
+    clearTimeout(timeout);
+  }
+}
+
+export async function getGroups() {
+  const authUser = JSON.parse(localStorage.getItem("authUser") || "{}");
+  const res = await fetch(`${BASE}/groups?userId=${encodeURIComponent(authUser.id || "")}`);
+  return res.json();
+}
+
+export async function getGroupMessages(groupId: string) {
+  const res = await fetch(`${BASE}/groups/${groupId}/messages`);
+  return res.json();
+}
+
+export async function sendGroupMessage(groupId: string, body: string, sender: string) {
+  const res = await fetch(`${BASE}/groups/${groupId}/messages`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ body, sender }),
+  });
   return res.json();
 }
 

@@ -4,14 +4,27 @@ import { sendFriendRequest } from "@/lib/api";
 import { Info } from "lucide-react";
 import { toast } from "sonner";
 import { useNavigate } from "react-router-dom";
+import { useMutation, useQueryClient } from "@tanstack/react-query";
 
 export default function AddFriend() {
   const navigate = useNavigate();
+  const qc = useQueryClient();
+
+  const mut = useMutation({
+    mutationFn: (identifier: string) => sendFriendRequest(identifier),
+    onMutate: async (identifier) => {
+      toast.info(`Sending request to ${identifier}...`);
+    },
+    onSuccess: (_res, identifier) => {
+      toast.success(`Friend request sent to ${identifier}`);
+      qc.invalidateQueries({ queryKey: ["friendRequests"] });
+      navigate("/app/requests");
+    },
+    onError: () => toast.error("Failed to send request"),
+  });
 
   const onSendRequest = async (identifier: string) => {
-    await sendFriendRequest(identifier);
-    toast.success(`Friend request sent to ${identifier}`);
-    navigate("/requests");
+    mut.mutate(identifier);
   };
 
   return (

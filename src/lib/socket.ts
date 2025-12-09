@@ -16,3 +16,7 @@ export function initSocket(userId: string) {
 export function joinChat(userId: string, friendId: string) {
   _socket?.emit("join", { userId, friendId });
 }
+
+export function joinGroup(groupId: string) {
+  _socket?.emit("group:join", { groupId });
+}
