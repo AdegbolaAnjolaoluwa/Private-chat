@@ -30,8 +30,9 @@ export default function ForgotPassword() {
       const { token } = await requestPasswordReset(values.identifier);
       toast.success("Reset link generated");
       navigate(`/reset?token=${encodeURIComponent(token)}`);
-    } catch (e: any) {
-      toast.error(e?.message || "Could not generate reset link");
+    } catch (e: unknown) {
+      const message = e instanceof Error ? e.message : "Could not generate reset link";
+      toast.error(message);
     } finally {
       setLoading(false);
     }

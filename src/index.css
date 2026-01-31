@@ -111,3 +111,22 @@ All colors MUST be HSL.
     @apply bg-background text-foreground;
   }
 }
+:root {
+  --vault-bg: #0a0a0c;
+  --vault-accent: #135bec;
+  --vault-border: #1a1a1e;
+  --vault-charcoal: #121214;
+}
+
+body {
+  background-color: var(--vault-bg);
+  background-image:
+    linear-gradient(rgba(19, 91, 236, 0.03) 1px, transparent 1px),
+    linear-gradient(90deg, rgba(19, 91, 236, 0.03) 1px, transparent 1px);
+  background-size: 80px 80px;
+}
+.vault-pattern {
+  background:
+    radial-gradient(circle at 2px 2px, rgba(255,255,255,0.02) 1px, transparent 0);
+  background-size: 24px 24px;
+}

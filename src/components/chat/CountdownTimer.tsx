@@ -1,6 +1,5 @@
 import { useState, useEffect } from "react";
 import { getRemainingTime } from "@/utils/time";
-import { Clock } from "lucide-react";
 
 interface CountdownTimerProps {
   expiresAt: string;
@@ -24,17 +23,11 @@ export function CountdownTimer({ expiresAt, onExpire }: CountdownTimerProps) {
   }, [expiresAt, onExpire]);
 
   if (timeLeft.isExpired) {
-    return (
-      <span className="text-xs text-message-expired flex items-center gap-1">
-        <Clock className="w-3 h-3" />
-        Expired
-      </span>
-    );
+    return <span>0h 00m</span>;
   }
 
   return (
-    <span className="text-xs opacity-70 flex items-center gap-1">
-      <Clock className="w-3 h-3" />
+    <span>
       {timeLeft.hours}h {timeLeft.minutes}m
     </span>
   );

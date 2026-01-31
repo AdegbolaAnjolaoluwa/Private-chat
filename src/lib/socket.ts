@@ -10,7 +10,8 @@ export const socket = {
 
 export function initSocket(userId: string) {
   if (_socket) return;
-  _socket = io("http://localhost:4000", { transports: ["websocket"], query: { userId } });
+  const url = typeof window !== "undefined" ? `http://${window.location.hostname}:4000` : "http://localhost:4000";
+  _socket = io(url, { transports: ["websocket"], query: { userId } });
 }
 
 export function joinChat(userId: string, friendId: string) {

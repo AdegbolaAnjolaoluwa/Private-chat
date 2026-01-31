@@ -7,6 +7,8 @@ import { getFriends, getMessages, reactToMessage, sendMessage, markMessageRead }
 import { getExpiryTime } from "@/utils/time";
 import { initSocket, joinChat, socket } from "@/lib/socket";
 
+import { getRoomKey } from "@/utils/chat";
+
 export default function Chat() {
   const { friendId = "" } = useParams();
   const [friend, setFriend] = useState<Friend | null>(null);
@@ -22,16 +24,24 @@ export default function Chat() {
   }, []);
 
   useEffect(() => {
+    if (!friendId) return;
     joinChat(currentUserId, friendId);
+    
+    const expectedChatId = getRoomKey(currentUserId, friendId);
+
     socket.on("typing:start", ({ chatId, userName }) => {
-      if (chatId === friendId) setTypingUser(userName);
+      if (chatId === expectedChatId) setTypingUser(userName);
     });
     socket.on("typing:stop", ({ chatId }) => {
-      if (chatId === friendId) setTypingUser(undefined);
+      if (chatId === expectedChatId) setTypingUser(undefined);
     });
     socket.on("message:new", ({ chatId, message }) => {
-      if (chatId === friendId) {
-        queryClient.setQueryData<Message[]>(["messages", friendId], (prev = []) => [...prev, message]);
+      if (chatId === expectedChatId) {
+        queryClient.setQueryData<Message[]>(["messages", friendId], (prev = []) => {
+           // Prevent duplicates if optimistic update already added it
+           if (prev.some(m => m.id === message.id)) return prev;
+           return [...prev, message];
+        });
       }
     });
     socket.on("message:read", ({ messageId, userId }) => {
@@ -45,7 +55,7 @@ export default function Chat() {
       socket.off("message:new");
       socket.off("message:read");
     };
-  }, [friendId]);
+  }, [friendId, currentUserId, queryClient]);
 
   useEffect(() => {
     getFriends().then((fs) => setFriend(fs.find((f: Friend) => f.id === friendId) || null));
@@ -93,10 +103,10 @@ export default function Chat() {
   };
 
   const onTyping = () => {
-    socket.emit("typing:start", { chatId: friendId, userName: currentUserId });
+    socket.emit("typing:start", { chatId: getRoomKey(currentUserId, friendId), userName: currentUserId });
   };
   const onStopTyping = () => {
-    socket.emit("typing:stop", { chatId: friendId });
+    socket.emit("typing:stop", { chatId: getRoomKey(currentUserId, friendId) });
   };
 
   const typingDisplay = useMemo(() => (typingUser !== currentUserId ? typingUser : undefined), [typingUser, currentUserId]);

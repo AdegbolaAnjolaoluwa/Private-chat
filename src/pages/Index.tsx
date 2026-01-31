@@ -116,7 +116,8 @@ const Index = () => {
     }));
 
     try {
-      await fetch(`http://localhost:4000/chats/${friendId}/messages`, {
+      const baseUrl = typeof window !== "undefined" ? `http://${window.location.hostname}:4000` : "http://localhost:4000";
+      await fetch(`${baseUrl}/chats/${friendId}/messages`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ body: messageText, sender: currentUserId }),

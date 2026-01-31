@@ -1,4 +1,11 @@
-const BASE = "http://localhost:4000";
+const getBaseUrl = () => {
+  if (typeof window !== "undefined") {
+    return `http://${window.location.hostname}:4000`;
+  }
+  return "http://localhost:4000";
+};
+
+const BASE = getBaseUrl();
 
 export async function getFriends() {
   const authUser = JSON.parse(localStorage.getItem("authUser") || "{}");
@@ -34,16 +41,22 @@ export async function sendGroupMessage(groupId: string, body: string, sender: st
 }
 
 export async function getFriendRequests(type: "incoming" | "outgoing") {
-  const res = await fetch(`${BASE}/friend-requests?type=${type}`);
+  const authUser = JSON.parse(localStorage.getItem("authUser") || "{}");
+  const res = await fetch(`${BASE}/friend-requests?type=${type}&userId=${encodeURIComponent(authUser.id || "")}`);
   return res.json();
 }
 
 export async function sendFriendRequest(toUserIdentifier: string) {
+  const authUser = JSON.parse(localStorage.getItem("authUser") || "{}");
   const res = await fetch(`${BASE}/friend-requests`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ toUserIdentifier }),
+    body: JSON.stringify({ toUserIdentifier, fromUserId: authUser.id }),
   });
+  if (!res.ok) {
+    const errorData = await res.json().catch(() => ({}));
+    throw new Error(errorData.error || "Failed to send request");
+  }
   return res.json();
 }
 
@@ -90,13 +103,16 @@ export async function markMessageRead(messageId: string, userId: string) {
   return res.json();
 }
 
-export async function login(email: string, password: string) {
+export async function login(identifier: string, password: string) {
   const res = await fetch(`${BASE}/auth/login`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ email, password }),
+    body: JSON.stringify({ email: identifier, password }),
   });
-  if (!res.ok) throw new Error("Invalid credentials");
+  if (!res.ok) {
+    const errorData = await res.json().catch(() => ({}));
+    throw new Error(errorData.error || "Invalid credentials");
+  }
   return res.json();
 }
 
@@ -106,7 +122,10 @@ export async function signup(email: string, username: string, password: string) 
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({ email, username, password }),
   });
-  if (!res.ok) throw new Error("Signup failed");
+  if (!res.ok) {
+    const errorData = await res.json().catch(() => ({}));
+    throw new Error(errorData.error || "Signup failed");
+  }
   return res.json();
 }
 
@@ -127,5 +146,28 @@ export async function resetPassword(token: string, password: string) {
     body: JSON.stringify({ token, password }),
   });
   if (!res.ok) throw new Error("Reset failed");
+  return res.json();
+}
+
+export async function deleteAccount(userId: string) {
+  const res = await fetch(`${BASE}/auth/delete`, {
+    method: "DELETE",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ userId }),
+  });
+  if (!res.ok) {
+    const errorData = await res.json().catch(() => ({}));
+    throw new Error(errorData.error || "Deletion failed");
+  }
+  return res.json();
+}
+
+export async function wipeAllMessages(userId: string) {
+  const res = await fetch(`${BASE}/messages/wipe`, {
+    method: "DELETE",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ userId }),
+  });
+  if (!res.ok) throw new Error("Wipe failed");
   return res.json();
 }

@@ -32,21 +32,21 @@ export function ReactionDisplay({ reactions, onToggleReaction, currentUserId }: 
                 <button
                   onClick={() => onToggleReaction(emoji)}
                   className={`
-                    inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs
-                    transition-all hover:scale-110
+                    inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-mono
+                    transition-all hover:scale-110 border backdrop-blur-sm
                     ${
                       userReacted
-                        ? "bg-primary/20 border border-primary"
-                        : "bg-secondary border border-border hover:bg-secondary/80"
+                        ? "bg-[#135bec]/20 border-[#135bec] text-[#135bec]"
+                        : "bg-[#0b0f1a]/80 border-white/10 text-white/60 hover:bg-[#0b0f1a] hover:border-white/20"
                     }
                   `}
                 >
                   <span>{emoji}</span>
-                  <span className="font-medium">{reactionList.length}</span>
+                  <span className="font-bold">{reactionList.length}</span>
                 </button>
               </TooltipTrigger>
-              <TooltipContent>
-                <p className="text-xs">{names}</p>
+              <TooltipContent className="bg-[#0b0f1a] border-white/10 text-white text-xs">
+                <p>{names}</p>
               </TooltipContent>
             </Tooltip>
           </TooltipProvider>
