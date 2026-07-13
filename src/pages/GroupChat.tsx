@@ -21,7 +21,8 @@ export default function GroupChat() {
   const currentUserId = authUser.id || "current-user";
 
   useEffect(() => {
-    initSocket(currentUserId);
+    const token = localStorage.getItem("authToken");
+    if (token) initSocket(token);
   }, []);
 
   useEffect(() => {
@@ -58,7 +59,7 @@ export default function GroupChat() {
     };
     queryClient.setQueryData<Message[]>(["group-messages", groupId], (prev = []) => [...prev, optimistic]);
     try {
-      await sendGroupMessage(groupId, text, currentUserId);
+      await sendGroupMessage(groupId, text);
     } finally {
       queryClient.invalidateQueries({ queryKey: ["group-messages", groupId] });
     }
@@ -79,7 +80,7 @@ export default function GroupChat() {
       ),
     );
     try {
-      await reactToMessage(messageId, emoji, currentUserId);
+      await reactToMessage(messageId, emoji);
     } finally {
       queryClient.invalidateQueries({ queryKey: ["group-messages", groupId] });
     }
@@ -93,7 +94,7 @@ export default function GroupChat() {
       .filter((m) => m.sender !== currentUserId && !(m.readBy || []).includes(currentUserId))
       .forEach(async (m) => {
         try {
-          await markMessageRead(m.id, currentUserId);
+          await markMessageRead(m.id);
           queryClient.setQueryData<Message[]>(["group-messages", groupId], (prev = []) =>
             prev.map((x) => (x.id === m.id ? { ...x, readBy: [...(x.readBy || []), currentUserId] } : x)),
           );

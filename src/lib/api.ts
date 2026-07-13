@@ -1,4 +1,6 @@
 const getBaseUrl = () => {
+  const envUrl = import.meta.env.VITE_API_URL;
+  if (envUrl) return envUrl;
   if (typeof window !== "undefined") {
     return `http://${window.location.hostname}:4000`;
   }
@@ -7,12 +9,24 @@ const getBaseUrl = () => {
 
 const BASE = getBaseUrl();
 
+function authHeaders(): Record<string, string> {
+  const token = localStorage.getItem("authToken");
+  return token ? { Authorization: `Bearer ${token}` } : {};
+}
+
+async function authedFetch(path: string, init: RequestInit = {}) {
+  const res = await fetch(`${BASE}${path}`, {
+    ...init,
+    headers: { ...authHeaders(), ...(init.headers || {}) },
+  });
+  return res;
+}
+
 export async function getFriends() {
-  const authUser = JSON.parse(localStorage.getItem("authUser") || "{}");
   const controller = new AbortController();
   const timeout = setTimeout(() => controller.abort(), 8000);
   try {
-    const res = await fetch(`${BASE}/friends?userId=${encodeURIComponent(authUser.id || "")}`, { signal: controller.signal });
+    const res = await authedFetch(`/friends`, { signal: controller.signal });
     if (!res.ok) throw new Error(`Failed to load friends (${res.status})`);
     return res.json();
   } finally {
@@ -21,37 +35,34 @@ export async function getFriends() {
 }
 
 export async function getGroups() {
-  const authUser = JSON.parse(localStorage.getItem("authUser") || "{}");
-  const res = await fetch(`${BASE}/groups?userId=${encodeURIComponent(authUser.id || "")}`);
+  const res = await authedFetch(`/groups`);
   return res.json();
 }
 
 export async function getGroupMessages(groupId: string) {
-  const res = await fetch(`${BASE}/groups/${groupId}/messages`);
+  const res = await authedFetch(`/groups/${groupId}/messages`);
   return res.json();
 }
 
-export async function sendGroupMessage(groupId: string, body: string, sender: string) {
-  const res = await fetch(`${BASE}/groups/${groupId}/messages`, {
+export async function sendGroupMessage(groupId: string, body: string) {
+  const res = await authedFetch(`/groups/${groupId}/messages`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ body, sender }),
+    body: JSON.stringify({ body }),
   });
   return res.json();
 }
 
 export async function getFriendRequests(type: "incoming" | "outgoing") {
-  const authUser = JSON.parse(localStorage.getItem("authUser") || "{}");
-  const res = await fetch(`${BASE}/friend-requests?type=${type}&userId=${encodeURIComponent(authUser.id || "")}`);
+  const res = await authedFetch(`/friend-requests?type=${type}`);
   return res.json();
 }
 
 export async function sendFriendRequest(toUserIdentifier: string) {
-  const authUser = JSON.parse(localStorage.getItem("authUser") || "{}");
-  const res = await fetch(`${BASE}/friend-requests`, {
+  const res = await authedFetch(`/friend-requests`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ toUserIdentifier, fromUserId: authUser.id }),
+    body: JSON.stringify({ toUserIdentifier }),
   });
   if (!res.ok) {
     const errorData = await res.json().catch(() => ({}));
@@ -61,44 +72,42 @@ export async function sendFriendRequest(toUserIdentifier: string) {
 }
 
 export async function acceptFriendRequest(id: string) {
-  const res = await fetch(`${BASE}/friend-requests/${id}/accept`, { method: "POST" });
+  const res = await authedFetch(`/friend-requests/${id}/accept`, { method: "POST" });
   return res.json();
 }
 
 export async function declineFriendRequest(id: string) {
-  const res = await fetch(`${BASE}/friend-requests/${id}/decline`, { method: "POST" });
+  const res = await authedFetch(`/friend-requests/${id}/decline`, { method: "POST" });
   return res.json();
 }
 
 export async function getMessages(friendId: string) {
-  const authUser = JSON.parse(localStorage.getItem("authUser") || "{}");
-  const res = await fetch(`${BASE}/chats/${friendId}/messages?userId=${encodeURIComponent(authUser.id || "current-user")}`);
+  const res = await authedFetch(`/chats/${friendId}/messages`);
   return res.json();
 }
 
-export async function sendMessage(friendId: string, body: string, sender: string) {
-  const res = await fetch(`${BASE}/chats/${friendId}/messages`, {
+export async function sendMessage(friendId: string, body: string) {
+  const res = await authedFetch(`/chats/${friendId}/messages`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ body, sender }),
+    body: JSON.stringify({ body }),
   });
   return res.json();
 }
 
-export async function reactToMessage(messageId: string, emoji: string, userId: string) {
-  const res = await fetch(`${BASE}/messages/${messageId}/react`, {
+export async function reactToMessage(messageId: string, emoji: string) {
+  const res = await authedFetch(`/messages/${messageId}/react`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ emoji, userId }),
+    body: JSON.stringify({ emoji }),
   });
   return res.json();
 }
 
-export async function markMessageRead(messageId: string, userId: string) {
-  const res = await fetch(`${BASE}/messages/${messageId}/read`, {
+export async function markMessageRead(messageId: string) {
+  const res = await authedFetch(`/messages/${messageId}/read`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ userId }),
   });
   return res.json();
 }
@@ -129,31 +138,24 @@ export async function signup(email: string, username: string, password: string) 
   return res.json();
 }
 
-export async function requestPasswordReset(identifier: string) {
-  const res = await fetch(`${BASE}/auth/forgot`, {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ identifier }),
-  });
-  if (!res.ok) throw new Error("Reset request failed");
-  return res.json();
-}
-
-export async function resetPassword(token: string, password: string) {
+export async function resetPassword(identifier: string, recoveryKey: string, newPassword: string) {
   const res = await fetch(`${BASE}/auth/reset`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ token, password }),
+    body: JSON.stringify({ identifier, recoveryKey, newPassword }),
   });
-  if (!res.ok) throw new Error("Reset failed");
+  if (!res.ok) {
+    const errorData = await res.json().catch(() => ({}));
+    throw new Error(errorData.error || "Reset failed");
+  }
   return res.json();
 }
 
-export async function deleteAccount(userId: string) {
-  const res = await fetch(`${BASE}/auth/delete`, {
+export async function deleteAccount(password: string) {
+  const res = await authedFetch(`/auth/delete`, {
     method: "DELETE",
     headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ userId }),
+    body: JSON.stringify({ password }),
   });
   if (!res.ok) {
     const errorData = await res.json().catch(() => ({}));
@@ -162,12 +164,15 @@ export async function deleteAccount(userId: string) {
   return res.json();
 }
 
-export async function wipeAllMessages(userId: string) {
-  const res = await fetch(`${BASE}/messages/wipe`, {
+export async function wipeAllMessages(password: string) {
+  const res = await authedFetch(`/messages/wipe`, {
     method: "DELETE",
     headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ userId }),
+    body: JSON.stringify({ password }),
   });
-  if (!res.ok) throw new Error("Wipe failed");
+  if (!res.ok) {
+    const errorData = await res.json().catch(() => ({}));
+    throw new Error(errorData.error || "Wipe failed");
+  }
   return res.json();
 }

@@ -8,14 +8,19 @@ export const socket = {
   emit: (...args: Parameters<Socket["emit"]>) => _socket?.emit(...args),
 };
 
-export function initSocket(userId: string) {
-  if (_socket) return;
-  const url = typeof window !== "undefined" ? `http://${window.location.hostname}:4000` : "http://localhost:4000";
-  _socket = io(url, { transports: ["websocket"], query: { userId } });
+function getSocketUrl() {
+  const envUrl = import.meta.env.VITE_API_URL;
+  if (envUrl) return envUrl;
+  return typeof window !== "undefined" ? `http://${window.location.hostname}:4000` : "http://localhost:4000";
 }
 
-export function joinChat(userId: string, friendId: string) {
-  _socket?.emit("join", { userId, friendId });
+export function initSocket(token: string) {
+  if (_socket) return;
+  _socket = io(getSocketUrl(), { transports: ["websocket"], query: { token } });
+}
+
+export function joinChat(friendId: string) {
+  _socket?.emit("join", { friendId });
 }
 
 export function joinGroup(groupId: string) {

@@ -1,9 +1,11 @@
-import { useNavigate } from "react-router-dom";
+import { useNavigate, useLocation } from "react-router-dom";
 import { Shield, Clock, CircleDashed, Key, Lock } from "lucide-react";
 import { useEffect, useState } from "react";
+import TrueFocus from "@/components/TrueFocus/TrueFocus";
 
 export default function Manifesto() {
   const navigate = useNavigate();
+  const location = useLocation();
   const [isVisible, setIsVisible] = useState(false);
 
   useEffect(() => {
@@ -13,7 +15,7 @@ export default function Manifesto() {
   }, []);
 
   const handleContinue = () => {
-    navigate("/identity-ready");
+    navigate("/identity-ready", { state: location.state });
   };
 
   return (
@@ -36,13 +38,33 @@ export default function Manifesto() {
         </div>
 
         {/* Main Headline */}
-        <div className="space-y-2 mb-8">
-          <h1 className="text-5xl md:text-7xl font-bold tracking-tighter italic">
-            NO PERMANENCE.
-          </h1>
-          <h1 className="text-5xl md:text-7xl font-bold tracking-tighter italic text-white/10">
-            NO AUDIENCE.
-          </h1>
+        <div className="mb-8 manifesto-headline">
+          <style>{`
+            .manifesto-headline .focus-word {
+              font-size: inherit;
+              font-weight: 700;
+              font-style: italic;
+              letter-spacing: -0.05em;
+            }
+            .manifesto-headline .focus-container {
+              font-size: 3rem;
+              line-height: 1.1;
+            }
+            @media (min-width: 768px) {
+              .manifesto-headline .focus-container {
+                font-size: 4.5rem;
+              }
+            }
+          `}</style>
+          <TrueFocus
+            sentence="NO PERMANENCE. NO AUDIENCE."
+            manualMode={false}
+            blurAmount={6}
+            borderColor="#135bec"
+            glowColor="rgba(19, 91, 236, 0.6)"
+            animationDuration={0.6}
+            pauseBetweenAnimations={1.2}
+          />
         </div>
 
         {/* Description */}

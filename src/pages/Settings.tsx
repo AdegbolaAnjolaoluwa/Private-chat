@@ -56,14 +56,14 @@ export default function Settings() {
   };
 
   const handleWipeChats = async () => {
+    const password = window.prompt("Enter your password to confirm wiping all chats:");
+    if (!password) return;
     try {
-      const authUser = JSON.parse(localStorage.getItem("authUser") || "{}");
-      if (authUser.id) {
-        await wipeAllMessages(authUser.id);
-        toast.success("All active message threads have been dissolved");
-      }
+      await wipeAllMessages(password);
+      toast.success("All active message threads have been dissolved");
     } catch (error) {
-      toast.error("Failed to wipe messages");
+      const message = error instanceof Error ? error.message : "Failed to wipe messages";
+      toast.error(message);
     }
   };
 

@@ -14,7 +14,6 @@ import Login from "./pages/Login";
 import Signup from "./pages/Signup";
 import Manifesto from "./pages/Manifesto";
 import IdentityReady from "./pages/IdentityReady";
-import ForgotPassword from "./pages/ForgotPassword";
 import ResetPassword from "./pages/ResetPasswordForm";
 import NotFound from "./pages/NotFound";
 import SplashScreen from "@/components/SplashScreen";
@@ -54,7 +53,6 @@ const App = () => {
               <Route path="/signup" element={<Signup />} />
               <Route path="/manifesto" element={<Manifesto />} />
               <Route path="/identity-ready" element={<IdentityReady />} />
-              <Route path="/forgot" element={<ForgotPassword />} />
               <Route path="/reset" element={<ResetPassword />} />
               <Route path="/" element={<Navigate to="/login" replace />} />
               <Route

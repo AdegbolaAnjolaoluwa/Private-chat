@@ -1,36 +1,45 @@
 import { useState, useEffect } from "react";
-import { useNavigate } from "react-router-dom";
+import { useNavigate, useLocation } from "react-router-dom";
 import { Copy, Download, Shield, Lock, Check, AlertTriangle, ArrowRight } from "lucide-react";
 import { toast } from "sonner";
 
 export default function IdentityReady() {
   const navigate = useNavigate();
+  const location = useLocation();
+  const recoveryKey = (location.state as { recoveryKey?: string } | null)?.recoveryKey;
   const [friendId, setFriendId] = useState("");
   const [isChecked, setIsChecked] = useState(false);
   const [copied, setCopied] = useState(false);
 
   useEffect(() => {
-    // Check if we already have one stored (to persist across reloads of this page)
+    // The recovery key is only ever available via route state right after signup/reset —
+    // it is never stored, so a direct visit or refresh here can't show it again.
+    if (!recoveryKey) {
+      navigate("/app/friends", { replace: true });
+      return;
+    }
     const authUser = JSON.parse(localStorage.getItem("authUser") || "{}");
     if (authUser.friendCode) {
       setFriendId(authUser.friendCode);
-    } else {
-      // Fallback if not found (shouldn't happen for new users)
-      setFriendId("XXXX-XXXX-XXXX");
     }
-  }, []);
+  }, [recoveryKey, navigate]);
 
-  const handleCopy = () => {
+  const handleCopyFriendId = () => {
     navigator.clipboard.writeText(friendId.replace(/\s/g, ""));
-    setCopied(true);
     toast.success("Friend ID copied to clipboard");
+  };
+
+  const handleCopyRecoveryKey = () => {
+    navigator.clipboard.writeText(recoveryKey || "");
+    setCopied(true);
+    toast.success("Recovery key copied to clipboard");
     setTimeout(() => setCopied(false), 2000);
   };
 
   const handleDownload = () => {
     const authUser = JSON.parse(localStorage.getItem("authUser") || "{}");
-    const content = `PRIVATE CHAT RECOVERY KEY\n\nFriend ID: ${friendId}\nUsername: ${authUser.username}\nGenerated: ${new Date().toLocaleString()}\n\nKEEP THIS FILE SAFE. IT IS THE ONLY WAY TO RECOVER YOUR ACCOUNT.`;
-    
+    const content = `PRIVATE CHAT RECOVERY KEY\n\nFriend ID: ${friendId}\nUsername: ${authUser.username}\nRecovery Key: ${recoveryKey}\nGenerated: ${new Date().toLocaleString()}\n\nKEEP THIS FILE SAFE. IT IS THE ONLY WAY TO RESET YOUR PASSWORD IF YOU FORGET IT.\nThis key will not be shown again.`;
+
     const blob = new Blob([content], { type: "text/plain" });
     const url = URL.createObjectURL(blob);
     const a = document.createElement("a");
@@ -48,10 +57,10 @@ export default function IdentityReady() {
       toast.error("Please confirm you have stored your credentials");
       return;
     }
-    // Clear the temp ID from storage as we're moving on (or keep it if you want it to persist in user profile)
-    // For now we just navigate
-    navigate("/app/friends");
+    navigate("/app/friends", { replace: true });
   };
+
+  if (!recoveryKey) return null;
 
   return (
     <div className="min-h-screen w-full bg-[#05070a] text-white flex flex-col items-center justify-center p-6 relative overflow-hidden font-sans selection:bg-[#135bec]/30">
@@ -101,10 +110,29 @@ export default function IdentityReady() {
               <span className="text-3xl md:text-5xl font-mono font-bold tracking-widest text-white drop-shadow-[0_0_15px_rgba(255,255,255,0.1)]">
                 {friendId}
               </span>
-              <button 
-                onClick={handleCopy}
+              <button
+                onClick={handleCopyFriendId}
                 className="p-2 hover:bg-white/10 rounded-lg transition-colors text-white/40 hover:text-white"
                 title="Copy ID"
+              >
+                <Copy className="w-5 h-5" />
+              </button>
+            </div>
+          </div>
+
+          {/* Recovery Key Display */}
+          <div className="flex flex-col items-center mb-8 pt-6 border-t border-white/5">
+            <span className="text-[10px] uppercase tracking-[0.2em] text-amber-500 font-semibold mb-4">
+              Your Recovery Key
+            </span>
+            <div className="flex items-center gap-4 group/id">
+              <span className="text-xl md:text-2xl font-mono font-bold tracking-widest text-white drop-shadow-[0_0_15px_rgba(255,255,255,0.1)] break-all text-center">
+                {recoveryKey}
+              </span>
+              <button
+                onClick={handleCopyRecoveryKey}
+                className="p-2 hover:bg-white/10 rounded-lg transition-colors text-white/40 hover:text-white shrink-0"
+                title="Copy Recovery Key"
               >
                 {copied ? <Check className="w-5 h-5 text-green-400" /> : <Copy className="w-5 h-5" />}
               </button>
@@ -118,11 +146,11 @@ export default function IdentityReady() {
               <div className="space-y-1">
                 <h3 className="text-sm font-bold text-white/90">Recovery Key Required</h3>
                 <p className="text-xs text-white/40 leading-relaxed max-w-xs">
-                  If you lose your ID or Key, your account cannot be recovered. Messages auto-delete every 2 hours.
+                  This key will never be shown again. Use it to reset your password if you forget it. If you lose it, your account cannot be recovered.
                 </p>
               </div>
             </div>
-            <button 
+            <button
               onClick={handleDownload}
               className="flex items-center gap-2 px-4 py-2 bg-[#135bec] hover:bg-[#135bec]/90 text-white text-xs font-bold uppercase tracking-wide rounded-lg transition-all shadow-[0_0_20px_rgba(19,91,236,0.3)] hover:shadow-[0_0_30px_rgba(19,91,236,0.5)] whitespace-nowrap"
             >

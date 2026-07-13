@@ -20,12 +20,13 @@ export default function Chat() {
   const currentUserId = authUser.id || "current-user";
 
   useEffect(() => {
-    initSocket(currentUserId);
+    const token = localStorage.getItem("authToken");
+    if (token) initSocket(token);
   }, []);
 
   useEffect(() => {
     if (!friendId) return;
-    joinChat(currentUserId, friendId);
+    joinChat(friendId);
     
     const expectedChatId = getRoomKey(currentUserId, friendId);
 
@@ -75,7 +76,7 @@ export default function Chat() {
     };
     queryClient.setQueryData<Message[]>(["messages", friendId], (prev = []) => [...prev, optimistic]);
     try {
-      await sendMessage(friendId, text, currentUserId);
+      await sendMessage(friendId, text);
     } finally {
       queryClient.invalidateQueries({ queryKey: ["messages", friendId] });
     }
@@ -96,7 +97,7 @@ export default function Chat() {
       ),
     );
     try {
-      await reactToMessage(messageId, emoji, currentUserId);
+      await reactToMessage(messageId, emoji);
     } finally {
       queryClient.invalidateQueries({ queryKey: ["messages", friendId] });
     }
@@ -117,7 +118,7 @@ export default function Chat() {
       .filter((m) => m.sender !== currentUserId && !(m.readBy || []).includes(currentUserId))
       .forEach(async (m) => {
         try {
-          await markMessageRead(m.id, currentUserId);
+          await markMessageRead(m.id);
           queryClient.setQueryData<Message[]>(["messages", friendId], (prev = []) =>
             prev.map((x) => (x.id === m.id ? { ...x, readBy: [...(x.readBy || []), currentUserId] } : x)),
           );

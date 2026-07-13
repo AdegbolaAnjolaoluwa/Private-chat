@@ -15,8 +15,9 @@ export default function Friends() {
   useEffect(() => {
     const authUser = JSON.parse(localStorage.getItem("authUser") || "{}");
     const currentUserId = authUser.id || "current-user";
-    initSocket(currentUserId);
-    friends.forEach((f) => joinChat(currentUserId, f.id));
+    const token = localStorage.getItem("authToken");
+    if (token) initSocket(token);
+    friends.forEach((f) => joinChat(f.id));
     socket.on("message:new", ({ chatId, message }) => {
       if (message.sender !== currentUserId) {
         setUnreadCounts((prev) => {

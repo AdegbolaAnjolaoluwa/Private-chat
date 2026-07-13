@@ -37,11 +37,11 @@ export default function Signup() {
 
       const res = await signup(privateEmail, values.username, values.password);
 
-      localStorage.setItem("authToken", res.token || "demo-token");
+      localStorage.setItem("authToken", res.token);
       localStorage.setItem("authUser", JSON.stringify(res.user));
 
       toast.success("Private identity created");
-      navigate("/manifesto");
+      navigate("/manifesto", { state: { recoveryKey: res.recoveryKey } });
     } catch (e: unknown) {
       const message = e instanceof Error ? e.message : "Failed to create identity";
       toast.error(message);

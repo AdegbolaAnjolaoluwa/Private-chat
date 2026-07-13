@@ -22,6 +22,7 @@ export default function DissolveModal({ isOpen, onClose }: DissolveModalProps) {
 
   // Step 2: Input
   const [confirmKey, setConfirmKey] = useState("");
+  const [password, setPassword] = useState("");
   const [timeLeft, setTimeLeft] = useState(60);
 
   // Step 3: Progress
@@ -35,6 +36,7 @@ export default function DissolveModal({ isOpen, onClose }: DissolveModalProps) {
       setStep("warning");
       setChecks({ revoke: false, messages: false, permanent: false });
       setConfirmKey("");
+      setPassword("");
       setProgress(0);
       setLogs([]);
       setTimeLeft(60);
@@ -103,23 +105,25 @@ export default function DissolveModal({ isOpen, onClose }: DissolveModalProps) {
     }
   };
 
-  const handleInputSubmit = () => {
-    if (confirmKey === "AccessKeyDISSOLVE") {
-      setStep("processing");
-    } else {
+  const handleInputSubmit = async () => {
+    if (confirmKey !== "AccessKeyDISSOLVE") {
       toast.error("Invalid Confirmation Key");
+      return;
+    }
+    if (!password) {
+      toast.error("Enter your Access Key password");
+      return;
+    }
+    try {
+      await deleteAccount(password);
+      setStep("processing");
+    } catch (error) {
+      const message = error instanceof Error ? error.message : "Deletion failed";
+      toast.error(message);
     }
   };
 
   const handleFinalize = async () => {
-    try {
-      const authUser = JSON.parse(localStorage.getItem("authUser") || "{}");
-      if (authUser.id) {
-        await deleteAccount(authUser.id);
-      }
-    } catch (error) {
-      console.error("Dissolve error:", error);
-    }
     localStorage.clear();
     navigate("/login");
     onClose();
@@ -237,6 +241,13 @@ export default function DissolveModal({ isOpen, onClose }: DissolveModalProps) {
                   value={confirmKey}
                   onChange={(e) => setConfirmKey(e.target.value)}
                   placeholder="AccessKeyDISSOLVE"
+                  className="w-full bg-black border border-white/20 rounded-lg px-4 py-3 text-white font-mono text-center focus:outline-none focus:border-red-500 focus:ring-1 focus:ring-red-500 transition-all placeholder:text-white/10 mb-3"
+                />
+                <input
+                  type="password"
+                  value={password}
+                  onChange={(e) => setPassword(e.target.value)}
+                  placeholder="Your password"
                   className="w-full bg-black border border-white/20 rounded-lg px-4 py-3 text-white font-mono text-center focus:outline-none focus:border-red-500 focus:ring-1 focus:ring-red-500 transition-all placeholder:text-white/10"
                 />
               </div>

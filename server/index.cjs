@@ -1,7 +1,11 @@
 const express = require("express");
 const http = require("http");
+const crypto = require("crypto");
 const cors = require("cors");
+const bcrypt = require("bcryptjs");
 const { Server } = require("socket.io");
+const db = require("./db.cjs");
+const { generateRecoveryKey } = db;
 
 const app = express();
 const server = http.createServer(app);
@@ -10,379 +14,517 @@ const io = new Server(server, { cors: { origin: "*", methods: ["GET", "POST"] } 
 app.use(cors());
 app.use(express.json());
 
-app.get("/health", (req, res) => {
-  res.json({ status: "ok", timestamp: new Date().toISOString() });
-});
-
-const users = [
-  { id: "1", username: "Alice", email: "alice@example.com", password: "alice123", friendCode: "1111-2222-3333" },
-  { id: "2", username: "Bob", email: "bob@example.com", password: "bob123", friendCode: "4444-5555-6666" },
-];
-
-let friendRequests = []; // { id, fromUserId, toUserId, status: 'pending'|'accepted'|'declined', createdAt }
-
-const groups = [
-  { id: "general", name: "General", members: ["1", "2"] },
-];
+const SESSION_TTL_MS = 7 * 24 * 60 * 60 * 1000; // 7 days
+const MESSAGE_TTL_MS = 2 * 60 * 60 * 1000; // 2 hours
 
 const roomKey = (a, b) => {
   const [x, y] = [String(a), String(b)].sort();
   return `chat:${x}:${y}`;
 };
 
-const messages = {}; // { roomKey: Message[] }
-const resetTokens = {}; // { token: userId }
-
-// Helper to generate friend code
 const generateFriendCode = () => {
   const segment = () => Math.floor(1000 + Math.random() * 9000).toString();
   return `${segment()}-${segment()}-${segment()}`;
 };
 
-app.post("/auth/login", (req, res) => {
-  const { email, password } = req.body || {};
-  const identifier = (email || "").trim().toLowerCase();
-  const user = users.find(
-    (u) => (u.email.toLowerCase() === identifier || u.username.toLowerCase() === identifier) && u.password === password,
-  );
-  console.log("Login attempt:", { identifier, ok: !!user });
-  if (!user) return res.status(401).json({ error: "Invalid credentials" });
-  res.json({ token: "demo-token", user: { id: user.id, username: user.username, email: user.email, friendCode: user.friendCode } });
-});
+const publicUser = (u) => ({ id: u.id, username: u.username, email: u.email, friendCode: u.friend_code });
 
-app.post("/auth/signup", (req, res) => {
-  const { email, username, password } = req.body || {};
-  console.log("Signup attempt:", { email, username, hasPassword: !!password });
-  if (!email || !username || !password) return res.status(400).json({ error: "Missing fields" });
-  const exists = users.find(
-    (u) => u.email.toLowerCase() === email.toLowerCase() || u.username.toLowerCase() === username.toLowerCase(),
-  );
-  if (exists) {
-    console.log("Signup failed: User exists", { username });
-    return res.status(409).json({ error: "User exists" });
+async function createSession(userId) {
+  const token = crypto.randomBytes(32).toString("hex");
+  const expiresAt = new Date(Date.now() + SESSION_TTL_MS).toISOString();
+  await db.query("INSERT INTO sessions (token, user_id, expires_at) VALUES ($1, $2, $3)", [token, userId, expiresAt]);
+  return token;
+}
+
+async function getSession(token) {
+  if (!token) return null;
+  const { rows } = await db.query("SELECT * FROM sessions WHERE token = $1", [token]);
+  const session = rows[0];
+  if (!session) return null;
+  if (new Date(session.expires_at).getTime() < Date.now()) {
+    await db.query("DELETE FROM sessions WHERE token = $1", [token]);
+    return null;
   }
-  const id = String(users.length + 1);
-  const friendCode = generateFriendCode();
-  const user = { id, username, email, password, friendCode };
-  users.push(user);
-  console.log("Signup success:", { id, username, friendCode });
-  res.status(201).json({ token: "demo-token", user: { id, username, email, friendCode } });
+  return session;
+}
+
+function asyncRoute(handler) {
+  return (req, res, next) => handler(req, res, next).catch(next);
+}
+
+function requireAuth(handler) {
+  return asyncRoute(async (req, res, next) => {
+    const header = req.headers.authorization || "";
+    const token = header.startsWith("Bearer ") ? header.slice(7) : null;
+    const session = await getSession(token);
+    if (!session) return res.status(401).json({ error: "Unauthorized" });
+    req.userId = session.user_id;
+    return handler(req, res, next);
+  });
+}
+
+app.get("/health", (req, res) => {
+  res.json({ status: "ok", timestamp: new Date().toISOString() });
 });
 
-app.post("/auth/forgot", (req, res) => {
-  const { identifier } = req.body || {};
-  const key = (identifier || "").trim().toLowerCase();
-  const user = users.find((u) => u.email.toLowerCase() === key || u.username.toLowerCase() === key);
-  if (!user) return res.status(404).json({ error: "User not found" });
-  const token = Math.random().toString(36).slice(2) + Date.now().toString(36);
-  resetTokens[token] = user.id;
-  console.log("Password reset token:", token, "for user", user.id);
-  res.json({ token });
-});
-
-app.post("/auth/reset", (req, res) => {
-  const { token, password } = req.body || {};
-  const userId = resetTokens[token];
-  if (!userId) return res.status(400).json({ error: "Invalid token" });
-  const user = users.find((u) => u.id === userId);
-  if (!user) return res.status(404).json({ error: "User not found" });
-  user.password = password;
-  delete resetTokens[token];
-  res.json({ ok: true });
-});
-
-app.delete("/auth/delete", (req, res) => {
-  const { userId } = req.body || {};
-  if (!userId) return res.status(400).json({ error: "Missing userId" });
-
-  const userIndex = users.findIndex((u) => u.id === userId);
-  if (userIndex === -1) return res.status(404).json({ error: "User not found" });
-
-  // Remove user
-  users.splice(userIndex, 1);
-
-  // Remove reset tokens
-  Object.keys(resetTokens).forEach((token) => {
-    if (resetTokens[token] === userId) {
-      delete resetTokens[token];
+app.post(
+  "/auth/login",
+  asyncRoute(async (req, res) => {
+    const { email, password } = req.body || {};
+    const identifier = (email || "").trim().toLowerCase();
+    const { rows } = await db.query(
+      "SELECT * FROM users WHERE lower(email) = $1 OR lower(username) = $1",
+      [identifier],
+    );
+    const user = rows[0];
+    if (!user || !bcrypt.compareSync(password || "", user.password_hash)) {
+      return res.status(401).json({ error: "Invalid credentials" });
     }
-  });
+    const token = await createSession(user.id);
+    res.json({ token, user: publicUser(user) });
+  }),
+);
 
-  // Remove friend requests
-  friendRequests = friendRequests.filter((r) => r.fromUserId !== userId && r.toUserId !== userId);
+app.post(
+  "/auth/signup",
+  asyncRoute(async (req, res) => {
+    const { email, username, password } = req.body || {};
+    if (!email || !username || !password) return res.status(400).json({ error: "Missing fields" });
+    if (String(password).length < 6) return res.status(400).json({ error: "Password too short" });
 
-  // Remove messages
-  Object.keys(messages).forEach((key) => {
-    // Check if key is a private chat involving the user
-    if (key.startsWith("chat:")) {
-      const parts = key.split(":");
-      if (parts.includes(userId)) {
-        delete messages[key];
-      }
+    const { rows: existingRows } = await db.query(
+      "SELECT 1 FROM users WHERE lower(email) = $1 OR lower(username) = $2",
+      [email.toLowerCase(), username.toLowerCase()],
+    );
+    if (existingRows[0]) return res.status(409).json({ error: "User exists" });
+
+    const id = crypto.randomUUID();
+    const friendCode = generateFriendCode();
+    const passwordHash = bcrypt.hashSync(password, 10);
+    const recoveryKey = generateRecoveryKey();
+    const recoveryKeyHash = bcrypt.hashSync(recoveryKey, 10);
+    await db.query(
+      "INSERT INTO users (id, username, email, password_hash, recovery_key_hash, friend_code) VALUES ($1, $2, $3, $4, $5, $6)",
+      [id, username, email, passwordHash, recoveryKeyHash, friendCode],
+    );
+
+    const token = await createSession(id);
+    // recoveryKey is returned exactly once — the server never stores or displays it again.
+    res.status(201).json({ token, recoveryKey, user: { id, username, email, friendCode } });
+  }),
+);
+
+app.post(
+  "/auth/reset",
+  asyncRoute(async (req, res) => {
+    const { identifier, recoveryKey, newPassword } = req.body || {};
+    if (!newPassword || String(newPassword).length < 6) {
+      return res.status(400).json({ error: "Password too short" });
     }
-  });
+    const key = (identifier || "").trim().toLowerCase();
+    const { rows } = await db.query(
+      "SELECT * FROM users WHERE lower(email) = $1 OR lower(username) = $1",
+      [key],
+    );
+    const user = rows[0];
 
-  // Remove from groups
-  groups.forEach((g) => {
-    g.members = g.members.filter((m) => m !== userId);
-  });
+    if (!user || !bcrypt.compareSync(recoveryKey || "", user.recovery_key_hash)) {
+      return res.status(401).json({ error: "Invalid identifier or recovery key" });
+    }
 
-  console.log(`User ${userId} dissolved.`);
-  res.json({ success: true });
-});
+    const passwordHash = bcrypt.hashSync(newPassword, 10);
+    const newRecoveryKey = generateRecoveryKey();
+    const newRecoveryKeyHash = bcrypt.hashSync(newRecoveryKey, 10);
+    await db.query("UPDATE users SET password_hash = $1, recovery_key_hash = $2 WHERE id = $3", [
+      passwordHash,
+      newRecoveryKeyHash,
+      user.id,
+    ]);
+    await db.query("DELETE FROM sessions WHERE user_id = $1", [user.id]);
 
-app.get("/friends", (req, res) => {
-  const userId = String(req.query.userId || "");
-  
-  // Find all accepted relationships involving this user
-  const relationships = friendRequests.filter(
-    r => r.status === "accepted" && (r.fromUserId === userId || r.toUserId === userId)
-  );
-  
-  const friendIds = relationships.map(r => r.fromUserId === userId ? r.toUserId : r.fromUserId);
-  
-  const list = users
-    .filter((u) => friendIds.includes(u.id))
-    .map((u) => ({ 
-      id: u.id, 
-      username: u.username, 
-      email: u.email, 
-      friendCode: u.friendCode,
-      status: u.id === "1" ? "online" : "offline", 
-      lastSeen: u.id === "2" ? "2h ago" : undefined 
+    // newRecoveryKey is returned exactly once, same as at signup — the old key is now permanently invalid.
+    res.json({ ok: true, recoveryKey: newRecoveryKey });
+  }),
+);
+
+app.delete(
+  "/auth/delete",
+  requireAuth(async (req, res) => {
+    const { password } = req.body || {};
+    const { rows } = await db.query("SELECT * FROM users WHERE id = $1", [req.userId]);
+    const user = rows[0];
+    if (!user || !bcrypt.compareSync(password || "", user.password_hash)) {
+      return res.status(401).json({ error: "Incorrect password" });
+    }
+    await db.query("DELETE FROM users WHERE id = $1", [req.userId]); // cascades sessions, friend_requests, group_members, messages, reactions, reads
+    console.log(`User ${req.userId} dissolved.`);
+    res.json({ success: true });
+  }),
+);
+
+app.get(
+  "/friends",
+  requireAuth(async (req, res) => {
+    const userId = req.userId;
+    const { rows: relationships } = await db.query(
+      "SELECT * FROM friend_requests WHERE status = 'accepted' AND (from_user_id = $1 OR to_user_id = $1)",
+      [userId],
+    );
+
+    const friendIds = relationships.map((r) => (r.from_user_id === userId ? r.to_user_id : r.from_user_id));
+    if (friendIds.length === 0) return res.json([]);
+
+    const { rows } = await db.query("SELECT * FROM users WHERE id = ANY($1)", [friendIds]);
+    const list = rows.map((u) => ({
+      id: u.id,
+      username: u.username,
+      email: u.email,
+      friendCode: u.friend_code,
+      status: "offline",
     }));
-    
-  // If no friends yet (and it's Alice or Bob for demo), keep the hardcoded demo friends if friendRequests is empty
-  // (Optional: remove this if you want strictly empty list for new users)
-  if (friendRequests.length === 0 && (userId === "1" || userId === "2")) {
-     const demoList = users
-      .filter((u) => u.id !== userId)
-      .map((u) => ({ id: u.id, username: u.username, email: u.email, friendCode: u.friendCode, status: "offline" }));
-     return res.json(demoList);
-  }
 
-  res.json(list);
-});
+    res.json(list);
+  }),
+);
 
-app.get("/friend-requests", (req, res) => {
-  const userId = String(req.query.userId || ""); // You'll need to pass userId in query or use token
-  // For now, assume userId is passed or we grab all (insecure demo)
-  // Better: update api.ts to pass userId or header
-  // Let's rely on api.ts passing userId in query for now if possible, or we need to parse it.
-  // Actually, api.ts call: `fetch(${BASE}/friend-requests?type=${type})` -> No userId!
-  // We need to fix api.ts to send userId or use a header.
-  // For this demo, let's assume we can't easily get userId without auth middleware.
-  // But wait, in a real app we have a token.
-  // Let's check api.ts again.
-  // api.ts: getFriendRequests("incoming") -> no user info sent.
-  // This is a limitation of the current demo setup. 
-  // I'll make a hack: pass userId in query from api.ts, or just return ALL requests for now (bad but works for single user demo).
-  // Actually, let's look at `getFriends`: `fetch(${BASE}/friends?userId=...)`.
-  // So I should update api.ts to send userId for requests too.
-  
-  const type = req.query.type;
-  // If userId is not provided, we might return nothing or all.
-  // Let's try to get it from query if added.
-  const uid = req.query.userId;
-  
-  if (!uid) return res.json([]);
+app.get(
+  "/friend-requests",
+  requireAuth(async (req, res) => {
+    const type = req.query.type;
+    const uid = req.userId;
 
-  if (type === "incoming") {
-    const list = friendRequests
-      .filter(r => r.toUserId === uid && r.status === "pending")
-      .map(r => {
-        const fromUser = users.find(u => u.id === r.fromUserId);
-        return {
-          id: r.id,
-          fromUser: fromUser ? fromUser.username : "Unknown",
-          fromUserId: r.fromUserId,
-          toUser: "You",
-          status: r.status,
-          createdAt: r.createdAt
-        };
-      });
-    return res.json(list);
-  } else {
-    const list = friendRequests
-      .filter(r => r.fromUserId === uid && r.status === "pending")
-      .map(r => {
-        const toUser = users.find(u => u.id === r.toUserId);
+    if (type === "incoming") {
+      const { rows } = await db.query(
+        "SELECT * FROM friend_requests WHERE to_user_id = $1 AND status = 'pending'",
+        [uid],
+      );
+      const list = await Promise.all(
+        rows.map(async (r) => {
+          const { rows: fromRows } = await db.query("SELECT username FROM users WHERE id = $1", [r.from_user_id]);
+          return {
+            id: r.id,
+            fromUser: fromRows[0] ? fromRows[0].username : "Unknown",
+            fromUserId: r.from_user_id,
+            toUser: "You",
+            status: r.status,
+            createdAt: r.created_at,
+          };
+        }),
+      );
+      return res.json(list);
+    }
+
+    const { rows } = await db.query(
+      "SELECT * FROM friend_requests WHERE from_user_id = $1 AND status = 'pending'",
+      [uid],
+    );
+    const list = await Promise.all(
+      rows.map(async (r) => {
+        const { rows: toRows } = await db.query("SELECT username FROM users WHERE id = $1", [r.to_user_id]);
         return {
           id: r.id,
           fromUser: "You",
           fromUserId: uid,
-          toUser: toUser ? toUser.username : "Unknown",
+          toUser: toRows[0] ? toRows[0].username : "Unknown",
           status: r.status,
-          createdAt: r.createdAt
+          createdAt: r.created_at,
         };
-      });
-    return res.json(list);
-  }
-});
+      }),
+    );
+    res.json(list);
+  }),
+);
 
-app.post("/friend-requests", (req, res) => {
-  const { toUserIdentifier, fromUserId } = req.body; // Need fromUserId from body
-  
-  if (!fromUserId) return res.status(401).json({ error: "Unauthorized" });
+app.post(
+  "/friend-requests",
+  requireAuth(async (req, res) => {
+    const { toUserIdentifier } = req.body || {};
+    const fromUserId = req.userId;
 
-  const target = users.find(
-    u => u.friendCode === toUserIdentifier || u.email === toUserIdentifier || u.username === toUserIdentifier
+    const { rows: targetRows } = await db.query(
+      "SELECT * FROM users WHERE friend_code = $1 OR email = $1 OR username = $1",
+      [toUserIdentifier],
+    );
+    const target = targetRows[0];
+
+    if (!target) return res.status(404).json({ error: "User not found" });
+    if (target.id === fromUserId) return res.status(400).json({ error: "Cannot add yourself" });
+
+    const { rows: existingRows } = await db.query(
+      "SELECT * FROM friend_requests WHERE (from_user_id = $1 AND to_user_id = $2) OR (from_user_id = $2 AND to_user_id = $1)",
+      [fromUserId, target.id],
+    );
+    const existing = existingRows[0];
+
+    if (existing) {
+      if (existing.status === "accepted") return res.status(400).json({ error: "Already friends" });
+      if (existing.status === "pending") return res.status(400).json({ error: "Request already pending" });
+    }
+
+    const request = {
+      id: crypto.randomUUID(),
+      fromUserId,
+      toUserId: target.id,
+      status: "pending",
+      createdAt: new Date().toISOString(),
+    };
+    await db.query(
+      "INSERT INTO friend_requests (id, from_user_id, to_user_id, status, created_at) VALUES ($1, $2, $3, $4, $5)",
+      [request.id, request.fromUserId, request.toUserId, request.status, request.createdAt],
+    );
+
+    res.status(201).json(request);
+  }),
+);
+
+app.post(
+  "/friend-requests/:id/accept",
+  requireAuth(async (req, res) => {
+    const { id } = req.params;
+    const { rows } = await db.query("SELECT * FROM friend_requests WHERE id = $1", [id]);
+    const request = rows[0];
+    if (!request) return res.status(404).json({ error: "Request not found" });
+    if (request.to_user_id !== req.userId) return res.status(403).json({ error: "Forbidden" });
+
+    await db.query("UPDATE friend_requests SET status = 'accepted' WHERE id = $1", [id]);
+    res.json({ ...request, status: "accepted" });
+  }),
+);
+
+app.post(
+  "/friend-requests/:id/decline",
+  requireAuth(async (req, res) => {
+    const { id } = req.params;
+    const { rows } = await db.query("SELECT * FROM friend_requests WHERE id = $1", [id]);
+    const request = rows[0];
+    if (!request) return res.status(404).json({ error: "Request not found" });
+    if (request.to_user_id !== req.userId) return res.status(403).json({ error: "Forbidden" });
+
+    await db.query("UPDATE friend_requests SET status = 'declined' WHERE id = $1", [id]);
+    res.json({ ...request, status: "declined" });
+  }),
+);
+
+app.get(
+  "/groups",
+  requireAuth(async (req, res) => {
+    const { rows } = await db.query(
+      `SELECT g.id, g.name FROM groups g
+       JOIN group_members gm ON gm.group_id = g.id
+       WHERE gm.user_id = $1`,
+      [req.userId],
+    );
+    const list = await Promise.all(
+      rows.map(async (g) => {
+        const { rows: memberRows } = await db.query("SELECT user_id FROM group_members WHERE group_id = $1", [g.id]);
+        return { id: g.id, name: g.name, members: memberRows.map((m) => m.user_id) };
+      }),
+    );
+    res.json(list);
+  }),
+);
+
+async function assertGroupMember(groupId, userId) {
+  const { rows } = await db.query("SELECT 1 FROM group_members WHERE group_id = $1 AND user_id = $2", [
+    groupId,
+    userId,
+  ]);
+  return !!rows[0];
+}
+
+async function assertChatParticipant(friendId) {
+  // Any authenticated user can message another existing user directly (no separate ACL beyond identity).
+  const { rows } = await db.query("SELECT 1 FROM users WHERE id = $1", [friendId]);
+  return !!rows[0];
+}
+
+async function rowToMessage(m) {
+  const { rows: reactionRows } = await db.query(
+    "SELECT user_id AS \"userId\", emoji FROM message_reactions WHERE message_id = $1",
+    [m.id],
   );
-
-  if (!target) return res.status(404).json({ error: "User not found" });
-  if (target.id === fromUserId) return res.status(400).json({ error: "Cannot add yourself" });
-
-  const existing = friendRequests.find(
-    r => (r.fromUserId === fromUserId && r.toUserId === target.id) || 
-         (r.fromUserId === target.id && r.toUserId === fromUserId)
-  );
-
-  if (existing) {
-    if (existing.status === "accepted") return res.status(400).json({ error: "Already friends" });
-    if (existing.status === "pending") return res.status(400).json({ error: "Request already pending" });
-  }
-
-  const request = {
-    id: String(Date.now()),
-    fromUserId,
-    toUserId: target.id,
-    status: "pending",
-    createdAt: new Date().toISOString()
+  const reactions = reactionRows.map((r) => ({ ...r, userName: r.userId }));
+  const { rows: readRows } = await db.query("SELECT user_id FROM message_reads WHERE message_id = $1", [m.id]);
+  return {
+    id: m.id,
+    sender: m.sender_id,
+    body: m.body,
+    createdAt: m.created_at,
+    expiresAt: m.expires_at,
+    reactions,
+    readBy: readRows.map((r) => r.user_id),
   };
-  
-  friendRequests.push(request);
-  res.status(201).json(request);
-});
+}
 
-app.post("/friend-requests/:id/accept", (req, res) => {
-  const { id } = req.params;
-  const reqIdx = friendRequests.findIndex(r => r.id === id);
-  if (reqIdx === -1) return res.status(404).json({ error: "Request not found" });
-  
-  friendRequests[reqIdx].status = "accepted";
-  res.json(friendRequests[reqIdx]);
-});
+app.get(
+  "/chats/:friendId/messages",
+  requireAuth(async (req, res) => {
+    const { friendId } = req.params;
+    const key = roomKey(req.userId, friendId);
+    const { rows } = await db.query("SELECT * FROM messages WHERE room_key = $1 AND expires_at > NOW()", [key]);
+    res.json(await Promise.all(rows.map(rowToMessage)));
+  }),
+);
 
-app.post("/friend-requests/:id/decline", (req, res) => {
-  const { id } = req.params;
-  const reqIdx = friendRequests.findIndex(r => r.id === id);
-  if (reqIdx === -1) return res.status(404).json({ error: "Request not found" });
-  
-  friendRequests[reqIdx].status = "declined";
-  res.json(friendRequests[reqIdx]);
-});
+app.post(
+  "/chats/:friendId/messages",
+  requireAuth(async (req, res) => {
+    const { friendId } = req.params;
+    const { body } = req.body || {};
+    if (!body) return res.status(400).json({ error: "Missing body" });
+    if (!(await assertChatParticipant(friendId))) return res.status(404).json({ error: "User not found" });
 
+    const key = roomKey(req.userId, friendId);
+    const id = crypto.randomUUID();
+    const createdAt = new Date().toISOString();
+    const expiresAt = new Date(Date.now() + MESSAGE_TTL_MS).toISOString();
+    await db.query(
+      "INSERT INTO messages (id, room_key, sender_id, body, created_at, expires_at) VALUES ($1, $2, $3, $4, $5, $6)",
+      [id, key, req.userId, body, createdAt, expiresAt],
+    );
 
-app.get("/groups", (req, res) => {
-  const userId = String(req.query.userId || "");
-  const list = groups.filter((g) => g.members.includes(userId)).map((g) => ({ id: g.id, name: g.name, members: g.members }));
-  res.json(list);
-});
+    const message = await rowToMessage({ id, sender_id: req.userId, body, created_at: createdAt, expires_at: expiresAt });
+    io.to(key).emit("message:new", { chatId: key, message });
+    res.status(201).json(message);
+  }),
+);
 
-// Fetch messages for a pair (requires userId query param)
-app.get("/chats/:friendId/messages", (req, res) => {
-  const { friendId } = req.params;
-  const userId = req.query.userId || "1";
-  const key = roomKey(userId, friendId);
-  const list = (messages[key] || []).filter((m) => new Date(m.expiresAt).getTime() > Date.now());
-  res.json(list);
-});
+app.get(
+  "/groups/:groupId/messages",
+  requireAuth(async (req, res) => {
+    const { groupId } = req.params;
+    if (!(await assertGroupMember(groupId, req.userId))) return res.status(403).json({ error: "Forbidden" });
+    const key = `group:${groupId}`;
+    const { rows } = await db.query("SELECT * FROM messages WHERE room_key = $1 AND expires_at > NOW()", [key]);
+    res.json(await Promise.all(rows.map(rowToMessage)));
+  }),
+);
 
-// Send message to a pair (sender is the logged-in user)
-app.post("/chats/:friendId/messages", (req, res) => {
-  const { friendId } = req.params;
-  const { body, sender } = req.body || {};
-  if (!sender || !body) return res.status(400).json({ error: "Missing sender or body" });
-  const key = roomKey(sender, friendId);
-  const createdAt = new Date().toISOString();
-  const expiresAt = new Date(new Date(createdAt).getTime() + 2 * 60 * 60 * 1000).toISOString();
-  const message = { id: Date.now().toString(), sender, body, createdAt, expiresAt, reactions: [], readBy: [] };
-  messages[key] = [ ...(messages[key] || []), message ];
-  io.to(key).emit("message:new", { chatId: key, message });
-  res.status(201).json(message);
-});
+app.post(
+  "/groups/:groupId/messages",
+  requireAuth(async (req, res) => {
+    const { groupId } = req.params;
+    const { body } = req.body || {};
+    if (!body) return res.status(400).json({ error: "Missing body" });
+    if (!(await assertGroupMember(groupId, req.userId))) return res.status(403).json({ error: "Forbidden" });
 
-// Group messages
-app.get("/groups/:groupId/messages", (req, res) => {
-  const { groupId } = req.params;
-  const key = `group:${groupId}`;
-  const list = (messages[key] || []).filter((m) => new Date(m.expiresAt).getTime() > Date.now());
-  res.json(list);
-});
+    const key = `group:${groupId}`;
+    const id = crypto.randomUUID();
+    const createdAt = new Date().toISOString();
+    const expiresAt = new Date(Date.now() + MESSAGE_TTL_MS).toISOString();
+    await db.query(
+      "INSERT INTO messages (id, room_key, sender_id, body, created_at, expires_at) VALUES ($1, $2, $3, $4, $5, $6)",
+      [id, key, req.userId, body, createdAt, expiresAt],
+    );
 
-app.post("/groups/:groupId/messages", (req, res) => {
-  const { groupId } = req.params;
-  const { body, sender } = req.body || {};
-  if (!sender || !body) return res.status(400).json({ error: "Missing sender or body" });
-  const createdAt = new Date().toISOString();
-  const expiresAt = new Date(new Date(createdAt).getTime() + 2 * 60 * 60 * 1000).toISOString();
-  const message = { id: Date.now().toString(), sender, body, createdAt, expiresAt, reactions: [], readBy: [] };
-  const key = `group:${groupId}`;
-  messages[key] = [ ...(messages[key] || []), message ];
-  io.to(key).emit("message:new", { chatId: key, message });
-  res.status(201).json(message);
-});
+    const message = await rowToMessage({ id, sender_id: req.userId, body, created_at: createdAt, expires_at: expiresAt });
+    io.to(key).emit("message:new", { chatId: key, message });
+    res.status(201).json(message);
+  }),
+);
 
-app.post("/messages/:id/react", (req, res) => {
-  const { emoji, userId } = req.body || {};
-  for (const [key, list] of Object.entries(messages)) {
-    const m = list.find((x) => x.id === req.params.id);
-    if (m) {
-      const existing = (m.reactions || []).find((r) => r.userId === userId);
-      if (existing) {
-        m.reactions = existing.emoji === emoji
-          ? (m.reactions || []).filter((r) => r.userId !== userId)
-          : (m.reactions || []).map((r) => (r.userId === userId ? { ...r, emoji } : r));
+app.post(
+  "/messages/:id/react",
+  requireAuth(async (req, res) => {
+    const { emoji } = req.body || {};
+    const userId = req.userId;
+    const { rows: messageRows } = await db.query("SELECT * FROM messages WHERE id = $1", [req.params.id]);
+    const message = messageRows[0];
+    if (!message) return res.status(404).json({ error: "Message not found" });
+
+    const { rows: existingRows } = await db.query(
+      "SELECT * FROM message_reactions WHERE message_id = $1 AND user_id = $2",
+      [message.id, userId],
+    );
+    const existing = existingRows[0];
+    if (existing) {
+      if (existing.emoji === emoji) {
+        await db.query("DELETE FROM message_reactions WHERE message_id = $1 AND user_id = $2", [message.id, userId]);
       } else {
-        m.reactions = [...(m.reactions || []), { emoji, userId, userName: userId }];
+        await db.query("UPDATE message_reactions SET emoji = $1 WHERE message_id = $2 AND user_id = $3", [
+          emoji,
+          message.id,
+          userId,
+        ]);
       }
-      io.to(key).emit("message:reaction", { messageId: m.id, emoji, userId });
-      return res.json(m);
+    } else {
+      await db.query("INSERT INTO message_reactions (message_id, user_id, emoji) VALUES ($1, $2, $3)", [
+        message.id,
+        userId,
+        emoji,
+      ]);
     }
-  }
-  res.status(404).json({ error: "Message not found" });
+
+    const result = await rowToMessage(message);
+    io.to(message.room_key).emit("message:reaction", { messageId: message.id, emoji, userId });
+    res.json(result);
+  }),
+);
+
+app.delete(
+  "/messages/wipe",
+  requireAuth(async (req, res) => {
+    const { password } = req.body || {};
+    const { rows: userRows } = await db.query("SELECT * FROM users WHERE id = $1", [req.userId]);
+    const user = userRows[0];
+    if (!user || !bcrypt.compareSync(password || "", user.password_hash)) {
+      return res.status(401).json({ error: "Incorrect password" });
+    }
+
+    const { rows: roomRows } = await db.query(
+      "SELECT DISTINCT room_key FROM messages WHERE room_key LIKE 'chat:%'",
+    );
+    const rooms = roomRows.map((r) => r.room_key).filter((key) => key.split(":").includes(req.userId));
+
+    await db.withTransaction(async (client) => {
+      for (const key of rooms) {
+        await client.query("DELETE FROM messages WHERE room_key = $1", [key]);
+      }
+    });
+
+    console.log(`Wiped messages for user ${req.userId}. Chats removed: ${rooms.length}`);
+    res.json({ success: true, count: rooms.length });
+  }),
+);
+
+app.post(
+  "/messages/:id/read",
+  requireAuth(async (req, res) => {
+    const { rows: messageRows } = await db.query("SELECT * FROM messages WHERE id = $1", [req.params.id]);
+    const message = messageRows[0];
+    if (!message) return res.status(404).json({ error: "Message not found" });
+
+    await db.query("INSERT INTO message_reads (message_id, user_id) VALUES ($1, $2) ON CONFLICT DO NOTHING", [
+      message.id,
+      req.userId,
+    ]);
+
+    const result = await rowToMessage(message);
+    io.to(message.room_key).emit("message:read", { messageId: message.id, userId: req.userId });
+    res.json(result);
+  }),
+);
+
+// Error handler for asyncRoute-wrapped handlers.
+app.use((err, req, res, next) => {
+  console.error(err);
+  res.status(500).json({ error: "Internal server error" });
 });
 
-app.delete("/messages/wipe", (req, res) => {
-  const { userId } = req.body || {};
-  if (!userId) return res.status(400).json({ error: "Missing userId" });
-
-  let deletedCount = 0;
-  
-  // Wipe all private chats involving this user
-  Object.keys(messages).forEach((key) => {
-    if (key.startsWith("chat:")) {
-      const parts = key.split(":");
-      // Check if user is part of the chat (chat:id1:id2)
-      if (parts.includes(userId)) {
-        delete messages[key];
-        deletedCount++;
-      }
-    }
-  });
-
-  console.log(`Wiped messages for user ${userId}. Chats removed: ${deletedCount}`);
-  res.json({ success: true, count: deletedCount });
-});
-
-app.post("/messages/:id/read", (req, res) => {
-  const { userId } = req.body || {};
-  for (const [key, list] of Object.entries(messages)) {
-    const m = list.find((x) => x.id === req.params.id);
-    if (m) {
-      m.readBy = Array.from(new Set([...(m.readBy || []), userId]));
-      io.to(key).emit("message:read", { messageId: m.id, userId });
-      return res.json(m);
-    }
-  }
-  res.status(404).json({ error: "Message not found" });
+io.use(async (socket, next) => {
+  const token = socket.handshake.query?.token;
+  const session = await getSession(typeof token === "string" ? token : undefined);
+  if (!session) return next(new Error("Unauthorized"));
+  socket.userId = session.user_id;
+  next();
 });
 
 io.on("connection", (socket) => {
-  socket.on("join", ({ userId, friendId }) => {
-    socket.join(roomKey(userId, friendId));
+  socket.on("join", ({ friendId }) => {
+    socket.join(roomKey(socket.userId, friendId));
   });
-  socket.on("group:join", ({ groupId }) => {
+  socket.on("group:join", async ({ groupId }) => {
+    if (!(await assertGroupMember(groupId, socket.userId))) return;
     socket.join(`group:${groupId}`);
   });
   socket.on("typing:start", ({ chatId, userName }) => {
@@ -393,4 +535,13 @@ io.on("connection", (socket) => {
   });
 });
 
-server.listen(4000, () => console.log("Server at http://localhost:4000"));
+const PORT = process.env.PORT || 4000;
+
+db.init()
+  .then(() => {
+    server.listen(PORT, () => console.log(`Server at http://localhost:${PORT}`));
+  })
+  .catch((err) => {
+    console.error("Failed to initialize database:", err);
+    process.exit(1);
+  });

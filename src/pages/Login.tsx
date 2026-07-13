@@ -32,28 +32,12 @@ export default function Login() {
     setLoading(true);
     try {
       const res = await login(values.username, values.password);
-      localStorage.setItem("authToken", res.token || "demo-token");
+      localStorage.setItem("authToken", res.token);
       localStorage.setItem("authUser", JSON.stringify(res.user));
       toast.success("Welcome back");
       navigate("/app/friends");
     } catch {
-      const identifier = values.username.trim().toLowerCase();
-      const demos: Record<string, { id: string, username: string, email: string, password: string }> = {
-        "alice@example.com": { id: "1", username: "Alice", email: "alice@example.com", password: "alice123" },
-        "alice": { id: "1", username: "Alice", email: "alice@example.com", password: "alice123" },
-        "bob@example.com": { id: "2", username: "Bob", email: "bob@example.com", password: "bob123" },
-        "bob": { id: "2", username: "Bob", email: "bob@example.com", password: "bob123" },
-      };
-
-      const demo = demos[identifier];
-      if (demo && demo.password === values.password) {
-        localStorage.setItem("authToken", "demo-token");
-        localStorage.setItem("authUser", JSON.stringify(demo));
-        toast.success("Signed in (demo)");
-        navigate("/app/friends");
-      } else {
-        toast.error("Invalid credentials");
-      }
+      toast.error("Invalid credentials");
     } finally {
       setLoading(false);
     }
@@ -164,6 +148,13 @@ export default function Login() {
                 {!loading && <ArrowRight className="w-5 h-5" />}
               </button>
             </form>
+            <button
+              type="button"
+              onClick={() => navigate("/reset")}
+              className="w-full text-center text-xs text-white/40 hover:text-[#135bec] transition-colors"
+            >
+              Forgot your Access Key?
+            </button>
           </div>
 
           {/* Footer */}
